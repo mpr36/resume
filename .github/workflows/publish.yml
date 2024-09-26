@@ -3,18 +3,56 @@ name: Publish
 on:
   push:
     branches:
-      - main
+      - master
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@main
-      - name: Compile and Deploy
-        uses: jonhue/pubtex-action@main
-        with:
-          deploy_key: ${{ secrets.ACTIONS_DEPLOY_KEY }}
-          files: |
-            examples/paper.tex
-            examples/slides.tex
-          handouts: |
-            examples/slides.tex
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up LaTeX environment
+        run: sudo apt-get update && sudo apt-get install -y texlive-full
+
+      - name: Compile LaTeX files
+        run: |
+          cd examples
+          latexmk -pdf paper.tex
+
+      - name: Set up Git user
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Deploy PDFs to GitHub Pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Setup deployment directory
+          mkdir -p deploy
+          cp examples/*.pdf deploy/
+          
+          # Go to deploy directory
+          cd deploy
+          
+          # Initialize git repository and add remote
+          git init
+          git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          
+          # Fetch the gh-pages branch and reset to it if exists (to preserve history)
+          git fetch origin gh-pages || echo "No gh-pages branch yet."
+          git checkout -B gh-pages origin/gh-pages || git checkout -B gh-pages
+          
+          # Add the PDF files
+          git add .
+
+          # Generate a meaningful commit message with a timestamp and description
+          current_time=$(date -u "+%Y-%m-%d %H:%M:%S UTC")
+          git commit -m "Nightly LaTeX build and deployment - $current_time"
+
+          # Pull latest changes to preserve history and rebase
+          git pull origin gh-pages --rebase
+
+          # Push to the gh-pages branch
+          git push origin gh-pages
